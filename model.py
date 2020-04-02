@@ -1,11 +1,5 @@
 from functools import reduce
 
-# from keras import layers
-# from keras import initializers
-# from keras import models
-# from keras_ import EfficientNetB0, EfficientNetB1, EfficientNetB2
-# from keras_ import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6
-
 import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.keras import initializers
