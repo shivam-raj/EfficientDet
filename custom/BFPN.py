@@ -1,17 +1,7 @@
 from functools import reduce
 
 import tensorflow as tf
-from tensorflow.keras import layers
-from tensorflow.keras import initializers
-from tensorflow.keras import models
-from tfkeras import EfficientNetB0, EfficientNetB1, EfficientNetB2
-from tfkeras import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6
-
-from layers import ClipBoxes, RegressBoxes, FilterDetections, wBiFPNAdd, BatchNormalization
-from initializers import PriorProbability
-from utils.anchors import anchors_for_shape
-import numpy as np
-
+from layers import wBiFPNAdd
 keras=tf.keras
 L=keras.layers
 activations=keras.activations
@@ -42,7 +32,7 @@ class BFPN(L.Layer):
             x = L.MaxPooling2D(pool_size=3, strides=2, padding='same')(inputs[0])
             add = wBiFPNAdd(name='add')([x, inputs[1]])
 
-        out = layers.Activation(lambda y: tf.nn.swish(y))(add)
+        out = L.Activation(lambda y: tf.nn.swish(y))(add)
         out = self.ConvBlock(kernel_size=3, strides=1)(out)
         return out
 

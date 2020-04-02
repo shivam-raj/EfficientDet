@@ -115,7 +115,7 @@ CONV_KERNEL_INITIALIZER = {
         'scale': 2.0,
         'mode': 'fan_out',
         # EfficientNet actually uses an untruncated normal distribution for
-        # initializing conv layers, but keras.initializers.VarianceScaling use
+        # initializing conv custom, but keras.initializers.VarianceScaling use
         # a truncated distribution.
         # We decided against a custom initializer for better serializability.
         'distribution': 'normal'
@@ -133,7 +133,7 @@ DENSE_KERNEL_INITIALIZER = {
 
 
 def preprocess_input(x, **kwargs):
-    kwargs = {k: v for k, v in kwargs.items() if k in ['backend', 'layers', 'models', 'utils']}
+    kwargs = {k: v for k, v in kwargs.items() if k in ['backend', 'custom', 'models', 'utils']}
     return _preprocess_input(x, mode='torch', **kwargs)
 
 
@@ -324,7 +324,7 @@ def EfficientNet(width_coefficient,
               'imagenet' (pre-training on ImageNet),
               or the path to the weights file to be loaded.
         input_tensor: optional Keras tensor
-            (i.e. output of `layers.Input()`)
+            (i.e. output of `custom.Input()`)
             to use as image input for the model.
         input_shape: optional shape tuple, only to be specified
             if `include_top` is False.

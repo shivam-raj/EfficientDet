@@ -6,7 +6,7 @@ from tensorflow.keras import initializers
 from tensorflow.keras import models
 from tfkeras import EfficientNetB0, EfficientNetB1, EfficientNetB2
 from tfkeras import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6
-
+from custom.BFPN import BFPN
 from layers import ClipBoxes, RegressBoxes, FilterDetections, wBiFPNAdd, BatchNormalization
 from initializers import PriorProbability
 from utils.anchors import anchors_for_shape
@@ -422,7 +422,8 @@ def efficientdet(phi, num_classes=20, num_anchors=9, weighted_bifpn=False, freez
     if weighted_bifpn:
         fpn_features = features
         for i in range(d_bifpn):
-            fpn_features = build_wBiFPN(fpn_features, w_bifpn, i, freeze_bn=freeze_bn)
+            fpn_features=BFPN(w_bifpn)(fpn_features)
+            #fpn_features = build_wBiFPN(fpn_features, w_bifpn, i, freeze_bn=freeze_bn)
     else:
         fpn_features = features
         for i in range(d_bifpn):
