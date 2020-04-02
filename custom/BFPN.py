@@ -7,11 +7,17 @@ L=keras.layers
 activations=keras.activations
 
 class BFPN(L.Layer):
-    def __init__(self,num_channels, epsilon=1e-4,momentum= 0.997, **kwargs):
+    def __init__(self,num_channels,index, epsilon=1e-4,momentum= 0.997, **kwargs):
         super(BFPN, self).__init__(**kwargs)
         self.epsilon = epsilon
         self.momentum=momentum
         self.num_channels=num_channels
+        self.index=index
+
+    def Preprocess(self,inputs):
+        for i in range(len(inputs)):
+            inputs[i]=L.Conv2D(self.num_channels,(1,1))(inputs[i])
+        return inputs
 
     def ConvBlock(self,kernel_size=3, strides=2):
         f1 = L.SeparableConv2D(self.num_channels, kernel_size=kernel_size, strides=strides, padding='same',
@@ -39,6 +45,10 @@ class BFPN(L.Layer):
     #def build(self, input_shape):
 
     def call(self, inputs, **kwargs):
+
+        if self.index==0:
+            inputs=self.Preprocess(inputs)
+
         i3,i4,i5,i6,i7=inputs
 
         m6=self.Process([i7,i6])
