@@ -27,7 +27,7 @@ class CocoGenerator(Generator):
     See https://github.com/cocodataset/cocoapi/tree/master/PythonAPI for more information.
     """
 
-    def __init__(self, data_dir, set_name, **kwargs):
+    def __init__(self, data_dir, set_name,image_dir='',use_dir=False, **kwargs):
         """
         Initialize a COCO data generator.
 
@@ -37,6 +37,8 @@ class CocoGenerator(Generator):
         """
         self.data_dir = data_dir
         self.set_name = set_name
+        self.image_dir=image_dir
+        self.use_dir=use_dir
         if set_name in ['train2017', 'val2017']:
             self.coco = COCO(os.path.join(data_dir, 'annotations', 'instances_' + set_name + '.json'))
         else:
@@ -126,7 +128,10 @@ class CocoGenerator(Generator):
         """
         # {'license': 2, 'file_name': '000000259765.jpg', 'coco_url': 'http://images.cocodataset.org/test2017/000000259765.jpg', 'height': 480, 'width': 640, 'date_captured': '2013-11-21 04:02:31', 'id': 259765}
         image_info = self.coco.loadImgs(self.image_ids[image_index])[0]
-        path = os.path.join(self.data_dir, 'images', self.set_name, image_info['file_name'])
+        if self.use_dir:
+            path = os.path.join(self.image_dir, image_info['file_name'])
+        else:
+            path = os.path.join(self.data_dir, 'images', self.set_name, image_info['file_name'])
         image = cv2.imread(path)
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         return image

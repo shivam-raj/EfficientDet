@@ -198,6 +198,8 @@ def create_generators(args):
         train_generator = CocoGenerator(
             args.coco_path,
             'train2017',
+            image_dir=args.ti,
+            #use_dir=True,
             misc_effect=misc_effect,
             visual_effect=visual_effect,
             group_method='random',
@@ -207,6 +209,8 @@ def create_generators(args):
         validation_generator = CocoGenerator(
             args.coco_path,
             'val2017',
+            image_dir=args.vi,
+            #use_dir=True,
             shuffle_groups=False,
             **common_args
         )
@@ -249,7 +253,6 @@ def parse_args(args):
 
     coco_parser = subparsers.add_parser('coco')
     coco_parser.add_argument('coco_path', help='Path to dataset directory (ie. /tmp/COCO).')
-
     pascal_parser = subparsers.add_parser('pascal')
     pascal_parser.add_argument('pascal_path', help='Path to dataset directory (ie. /tmp/VOCdevkit).')
 
@@ -261,6 +264,8 @@ def parse_args(args):
     parser.add_argument('--detect-quadrangle', help='If to detect quadrangle.', action='store_true', default=False)
     parser.add_argument('--detect-text', help='If is text detection task.', action='store_true', default=False)
 
+    parser.add_argument('--ti', help='Training Images',default='datasets/coco/train2017')
+    parser.add_argument('--vi', help='Training Images',default='datasets/coco/val2017')
     parser.add_argument('--snapshot', help='Resume training from a snapshot.')
     parser.add_argument('--freeze-backbone', help='Freeze training of backbone custom.', action='store_true')
     parser.add_argument('--freeze-bn', help='Freeze training of BatchNormalization custom.', action='store_true')
