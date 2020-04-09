@@ -1,16 +1,16 @@
-from functools import reduce
-
 import tensorflow as tf
 from tensorflow.keras import layers
-from tensorflow.keras import initializers
 from tensorflow.keras import models
 from tfkeras import EfficientNetB0, EfficientNetB1, EfficientNetB2
 from tfkeras import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6
-from custom.BFPN import BiFPN
-from layers import ClipBoxes, RegressBoxes, FilterDetections, wBiFPNAdd, BatchNormalization
-from initializers import PriorProbability
+#from custom.layers import BiFPN
+from layers import ClipBoxes, RegressBoxes, FilterDetections,wBiFPNAdd
 from utils.anchors import anchors_for_shape
 import numpy as np
+from custom.detector import BoxNet
+from custom.classifier import ClassNet
+from functools import reduce
+
 
 w_bifpns = [64, 88, 112, 160, 224, 288, 384]
 d_bifpns = [3, 4, 5, 6, 7, 7, 8]
@@ -22,117 +22,81 @@ backbones = [EfficientNetB0, EfficientNetB1, EfficientNetB2,
 MOMENTUM = 0.997
 EPSILON = 1e-4
 
+keras=tf.keras
+L=keras.layers
+activations=keras.activations
 
 
-class BoxNet(models.Model):
-    def __init__(self, width, depth, num_anchors=9, separable_conv=True, freeze_bn=False, **kwargs):
-        super(BoxNet, self).__init__(**kwargs)
-        self.width = width
-        self.depth = depth
-        self.num_anchors = num_anchors
-        self.separable_conv = separable_conv
-        options = {
-            'kernel_size': 3,
-            'strides': 1,
-            'padding': 'same',
-            'bias_initializer': 'zeros',
-        }
-        if separable_conv:
-            kernel_initializer = {
-                'depthwise_initializer': initializers.VarianceScaling(),
-                'pointwise_initializer': initializers.VarianceScaling(),
-            }
-            options.update(kernel_initializer)
-            self.convs = [layers.SeparableConv2D(filters=width, name=f'{self.name}/box-{i}', **options) for i in
-                          range(depth)]
-            self.head = layers.SeparableConv2D(filters=num_anchors * 4, name=f'{self.name}/box-predict', **options)
-        else:
-            kernel_initializer = {
-                'kernel_initializer': initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None)
-            }
-            options.update(kernel_initializer)
-            self.convs = [layers.Conv2D(filters=width, name=f'{self.name}/box-{i}', **options) for i in range(depth)]
-            self.head = layers.Conv2D(filters=num_anchors * 4, name=f'{self.name}/box-predict', **options)
-        self.bns = [
-            [layers.BatchNormalization(momentum=MOMENTUM, epsilon=EPSILON, name=f'{self.name}/box-{i}-bn-{j}') for j in
-             range(3, 8)]
-            for i in range(depth)]
-        # self.bns = [[BatchNormalization(freeze=freeze_bn, name=f'{self.name}/box-{i}-bn-{j}') for j in range(3, 8)]
-        #             for i in range(depth)]
-        self.relu = layers.Lambda(lambda x: tf.nn.swish(x))
-        self.reshape = layers.Reshape((-1, 4))
-        self.level = 0
+def QuadFPN(inputs,num_channels, index, epsilon=1e-4, momentum=0.997):
+    def Preprocess(inputs):
+        for i in range(len(inputs)):
+            inputs[i] = L.Conv2D(num_channels, (1, 1),name='pre-{}'.format(i))(inputs[i])
+        return inputs
 
-    def call(self, inputs, **kwargs):
-        feature, level = inputs
-        for i in range(self.depth):
-            feature = self.convs[i](feature)
-            feature = self.bns[i][self.level](feature)
-            feature = self.relu(feature)
-        outputs = self.head(feature)
-        outputs = self.reshape(outputs)
-        self.level += 1
-        return outputs
+    def ConvBlock(value,kernel_size=3, strides=2):
+        f1 = L.SeparableConv2D(num_channels,name='conv-{0}-{1}'.format(index,value), kernel_size=kernel_size, strides=strides, padding='same',
+                               use_bias=True)
+        f2 = L.BatchNormalization(name='bn-{0}-{1}'.format(index,value),momentum=momentum, epsilon=epsilon)
+        return reduce(lambda f, g: lambda *args, **kwargs: g(f(*args, **kwargs)), (f1, f2))
 
+    def Process(inputs,value, type='up'):
+        if type == 'up':
+            x = L.UpSampling2D()(inputs[0])
+            add = wBiFPNAdd(name='bifpn-add-{0}-{1}'.format(index,value))([x, inputs[1]])
 
-class ClassNet(models.Model):
-    def __init__(self, width, depth, num_classes=20, num_anchors=9, separable_conv=True, freeze_bn=False, **kwargs):
-        super(ClassNet, self).__init__(**kwargs)
-        self.width = width
-        self.depth = depth
-        self.num_classes = num_classes
-        self.num_anchors = num_anchors
-        self.separable_conv = separable_conv
-        options = {
-            'kernel_size': 3,
-            'strides': 1,
-            'padding': 'same',
-        }
-        if self.separable_conv:
-            kernel_initializer = {
-                'depthwise_initializer': initializers.VarianceScaling(),
-                'pointwise_initializer': initializers.VarianceScaling(),
-            }
-            options.update(kernel_initializer)
-            self.convs = [layers.SeparableConv2D(filters=width, bias_initializer='zeros', name=f'{self.name}/class-{i}',
-                                                 **options)
-                          for i in range(depth)]
-            self.head = layers.SeparableConv2D(filters=num_classes * num_anchors,
-                                               bias_initializer=PriorProbability(probability=0.01),
-                                               name=f'{self.name}/class-predict', **options)
-        else:
-            kernel_initializer = {
-                'kernel_initializer': initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None)
-            }
-            options.update(kernel_initializer)
-            self.convs = [layers.Conv2D(filters=width, bias_initializer='zeros', name=f'{self.name}/class-{i}',
-                                        **options)
-                          for i in range(depth)]
-            self.head = layers.Conv2D(filters=num_classes * num_anchors,
-                                      bias_initializer=PriorProbability(probability=0.01),
-                                      name='class-predict', **options)
-        self.bns = [
-            [layers.BatchNormalization(momentum=MOMENTUM, epsilon=EPSILON, name=f'{self.name}/class-{i}-bn-{j}') for j
-             in range(3, 8)]
-            for i in range(depth)]
-        # self.bns = [[BatchNormalization(freeze=freeze_bn, name=f'{self.name}/class-{i}-bn-{j}') for j in range(3, 8)]
-        #             for i in range(depth)]
-        self.relu = layers.Lambda(lambda x: tf.nn.swish(x))
-        self.reshape = layers.Reshape((-1, num_classes))
-        self.activation = layers.Activation('sigmoid')
-        self.level = 0
+        if type == 'max':
+            x = L.MaxPooling2D(pool_size=3, strides=2, padding='same')(inputs[0])
+            add = wBiFPNAdd(name='bifpn-add-{0}-{1}'.format(index,value))([x, inputs[1], inputs[2]])
 
-    def call(self, inputs, **kwargs):
-        feature, level = inputs
-        for i in range(self.depth):
-            feature = self.convs[i](feature)
-            feature = self.bns[i][self.level](feature)
-            feature = self.relu(feature)
-        outputs = self.head(feature)
-        outputs = self.reshape(outputs)
-        outputs = self.activation(outputs)
-        self.level += 1
-        return outputs
+        if type == 'stretch':
+            x = L.UpSampling2D()(inputs[0])
+            add = wBiFPNAdd(name='bifpn-add-{0}-{1}'.format(index,value))([x,inputs[1], inputs[2]])
+
+        if type == 'out':
+            x = L.MaxPooling2D(pool_size=3, strides=2, padding='same')(inputs[0])
+            add = wBiFPNAdd(name='bifpn-add-{0}-{1}'.format(index,value))([x, inputs[1]])
+
+        if type == 'put':
+            x = L.UpSampling2D()(inputs[0])
+            add = wBiFPNAdd(name='bifpn-add-{0}-{1}'.format(index,value))([x, inputs[1]])
+
+        if type == 'eval':
+            add = wBiFPNAdd(name='bifpn-add-{0}-{1}'.format(index,value))([inputs[0], inputs[1]])
+
+        out = L.Activation(lambda y: tf.nn.swish(y))(add)
+        out = ConvBlock(value=value,kernel_size=3, strides=1)(out)
+        return out
+
+    if index == 0:
+        inputs = Preprocess(inputs)
+
+    i3, i4, i5, i6, i7 = inputs
+
+    n4 = Process([i3, i4],value='n3',type='out')
+    n5 = Process([n4, i5],value='n4',type='out')
+    n6 = Process([n5, i6],value='n5',type='out')
+    p7 = Process([n6, i7],value='p7',type='out')
+    p6 = Process([p7, n6, i6],value='p6',type='stretch')
+    p5 = Process([p6, n5, i5],value='p5',type='stretch')
+    p4 = Process([p5, n4, i4],value='p4',type='stretch')
+    p3 = Process([p4, i3],value='p3',type='put')
+
+    m6 = Process([i7, i6],value='m6')
+    m5 = Process([m6, i5],value='m5')
+    m4 = Process([m5, i4],value='m4')
+    o3 = Process([m4, i3],value='o3')
+    o4 = Process([o3, m4, i4],value='o4', type='max')
+    o5 = Process([o4, m5, i5],value='o5', type='max')
+    o6 = Process([o5, m6, i6],value='o6', type='max')
+    o7 = Process([o6, i7],value='o7', type='out')
+
+    w3 = Process([o3, p3], value='w3', type='eval')
+    w4 = Process([o4, p4], value='w4', type='eval')
+    w5 = Process([o5, p5], value='w5', type='eval')
+    w6 = Process([o6, p6], value='w6', type='eval')
+    w7 = Process([o7, p7], value='w7', type='eval')
+
+    return w3,w4,w5,w6,w7
 
 
 def efficientdet(phi, num_classes=20, num_anchors=9, weighted_bifpn=True, freeze_bn=False,
@@ -150,12 +114,14 @@ def efficientdet(phi, num_classes=20, num_anchors=9, weighted_bifpn=True, freeze
     if weighted_bifpn:
         fpn_features = features
         for i in range(d_bifpn):
-            fpn_features=BiFPN(fpn_features,w_bifpn,index=i)
+            fpn_features=QuadFPN(fpn_features,w_bifpn,index=i)
     else:
         raise ValueError('Only Weighted Network Supported')
-    box_net = BoxNet(w_head, d_head, num_anchors=num_anchors, separable_conv=separable_conv, freeze_bn=freeze_bn,
-                     name='box_net')
-    class_net = ClassNet(w_head, d_head, num_classes=num_classes, num_anchors=num_anchors,
+    box_net = BoxNet(w_head, d_head,MOMENTUM=MOMENTUM,EPSILON=EPSILON,
+                     num_anchors=num_anchors, separable_conv=separable_conv,
+                     freeze_bn=freeze_bn,name='box_net')
+    class_net = ClassNet(w_head, d_head,MOMENTUM=MOMENTUM,EPSILON=EPSILON,
+                         num_classes=num_classes, num_anchors=num_anchors,
                          separable_conv=separable_conv, freeze_bn=freeze_bn, name='class_net')
     classification = [class_net([feature, i]) for i, feature in enumerate(fpn_features)]
     classification = layers.Concatenate(axis=1, name='classification')(classification)
