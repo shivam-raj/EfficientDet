@@ -25,21 +25,21 @@ _KERAS_UTILS = None
 
 def get_submodules_from_kwargs(kwargs):
     backend = kwargs.get('backend', _KERAS_BACKEND)
-    layers = kwargs.get('custom', _KERAS_LAYERS)
+    layers = kwargs.get('layers', _KERAS_LAYERS)
     models = kwargs.get('models', _KERAS_MODELS)
     utils = kwargs.get('utils', _KERAS_UTILS)
     for key in kwargs.keys():
-        if key not in ['backend', 'custom', 'models', 'utils']:
+        if key not in ['backend','layers', 'custom', 'models', 'utils']:
             raise TypeError('Invalid keyword argument: %s', key)
     return backend, layers, models, utils
 
 
 def inject_keras_modules(func):
-    import keras
+    import tensorflow.keras as keras
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         kwargs['backend'] = keras.backend
-        kwargs['custom'] = keras.layers
+        kwargs['layers'] = keras.layers
         kwargs['models'] = keras.models
         kwargs['utils'] = keras.utils
         return func(*args, **kwargs)
@@ -52,7 +52,7 @@ def inject_tfkeras_modules(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         kwargs['backend'] = tfkeras.backend
-        kwargs['custom'] = tfkeras.layers
+        kwargs['layers'] = tfkeras.layers
         kwargs['models'] = tfkeras.models
         kwargs['utils'] = tfkeras.utils
         return func(*args, **kwargs)
@@ -61,7 +61,7 @@ def inject_tfkeras_modules(func):
 
 
 def init_keras_custom_objects():
-    import keras
+    import tensorflow.keras as keras
     import efficientnet as model
 
     custom_objects = {

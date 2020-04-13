@@ -198,22 +198,15 @@ def create_generators(args):
         train_generator = CocoGenerator(
             args.coco_path,
             'train2017',
-            image_dir=args.ti,
-            #use_dir=True,
             misc_effect=misc_effect,
             visual_effect=visual_effect,
             group_method='random',
             **common_args
         )
-
-        validation_generator = CocoGenerator(
-            args.coco_path,
-            'val2017',
-            image_dir=args.vi,
-            #use_dir=True,
-            shuffle_groups=False,
-            **common_args
-        )
+        if args.compute_val_loss:
+            validation_generator = CocoGenerator(args.coco_path,'val2017',shuffle_groups=False,**common_args)
+        else:
+            validation_generator = None
     else:
         raise ValueError('Invalid data type received: {}'.format(args.dataset_type))
 
@@ -264,8 +257,6 @@ def parse_args(args):
     parser.add_argument('--detect-quadrangle', help='If to detect quadrangle.', action='store_true', default=False)
     parser.add_argument('--detect-text', help='If is text detection task.', action='store_true', default=False)
 
-    parser.add_argument('--ti', help='Training Images',default='datasets/coco/train2017')
-    parser.add_argument('--vi', help='Training Images',default='datasets/coco/val2017')
     parser.add_argument('--snapshot', help='Resume training from a snapshot.')
     parser.add_argument('--freeze-backbone', help='Freeze training of backbone custom.', action='store_true')
     parser.add_argument('--freeze-bn', help='Freeze training of BatchNormalization custom.', action='store_true')
@@ -313,7 +304,11 @@ def main(args=None):
     if args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-    # K.set_session(get_session())
+    if args.tpu:
+        resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
+        tf.config.experimental_connect_to_cluster(resolver)
+        tf.tpu.experimental.initialize_tpu_system(resolver)
+        strategy = tf.distribute.experimental.TPUStrategy(resolver)
 
     model, prediction_model = efficientdet(args.phi,
                                            num_classes=num_classes,
@@ -322,7 +317,10 @@ def main(args=None):
                                            freeze_bn=args.freeze_bn,
                                            detect_quadrangle=args.detect_quadrangle
                                            )
-    # load pretrained weights
+    if args.tpu:
+        model = tf.contrib.tpu.keras_to_tpu_model(model,strategy=strategy)
+        prediction_model = tf.contrib.tpu.keras_to_tpu_model(prediction_model,strategy=strategy)
+
     if args.snapshot:
         if args.snapshot == 'imagenet':
             model_name = 'efficientnet-b{}'.format(args.phi)
