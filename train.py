@@ -148,7 +148,7 @@ def create_generators(args):
     }
 
     # create random transform generator for augmenting training data
-    if args.random_transform:
+    if not args.random_transform:
         misc_effect = MiscEffect()
         visual_effect = VisualEffect()
     else:
@@ -197,14 +197,14 @@ def create_generators(args):
         from generators.coco import CocoGenerator
         train_generator = CocoGenerator(
             args.coco_path,
-            'train2017',
+            'train'+args.set,
             misc_effect=misc_effect,
             visual_effect=visual_effect,
             group_method='random',
             **common_args
         )
         if args.compute_val_loss:
-            validation_generator = CocoGenerator(args.coco_path,'val2017',shuffle_groups=False,**common_args)
+            validation_generator = CocoGenerator(args.coco_path,'val'+args.set,shuffle_groups=False,**common_args)
         else:
             validation_generator = None
     else:
@@ -246,6 +246,7 @@ def parse_args(args):
 
     coco_parser = subparsers.add_parser('coco')
     coco_parser.add_argument('coco_path', help='Path to dataset directory (ie. /tmp/COCO).')
+
     pascal_parser = subparsers.add_parser('pascal')
     pascal_parser.add_argument('pascal_path', help='Path to dataset directory (ie. /tmp/VOCdevkit).')
 
@@ -256,17 +257,17 @@ def parse_args(args):
                             help='Path to CSV file containing annotations for validation (optional).')
     parser.add_argument('--detect-quadrangle', help='If to detect quadrangle.', action='store_true', default=False)
     parser.add_argument('--detect-text', help='If is text detection task.', action='store_true', default=False)
+    parser.add_argument('--set', help='Which COCO Dataset to use ',default='2017')
 
     parser.add_argument('--snapshot', help='Resume training from a snapshot.')
-    parser.add_argument('--freeze-backbone', help='Freeze training of backbone custom.', action='store_true')
+    parser.add_argument('--train-backbone', help='Training of backbone custom.', action='store_true')
     parser.add_argument('--freeze-bn', help='Freeze training of BatchNormalization custom.', action='store_true')
-    parser.add_argument('--weighted-bifpn', help='Use weighted BiFPN', action='store_true')
 
-    parser.add_argument('--batch-size', help='Size of the batches.', default=1, type=int)
+    parser.add_argument('--batch-size', help='Size of the batches.', default=32, type=int)
     parser.add_argument('--phi', help='Hyper parameter phi', default=0, type=int, choices=(0, 1, 2, 3, 4, 5, 6))
     parser.add_argument('--gpu', help='Id of the GPU to use (as reported by nvidia-smi).')
     parser.add_argument('--epochs', help='Number of epochs to train.', type=int, default=50)
-    parser.add_argument('--steps', help='Number of steps per epoch.', type=int, default=10000)
+    parser.add_argument('--steps', help='Number of steps per epoch.', type=int, default=1000)
     parser.add_argument('--snapshot-path',
                         help='Path to store snapshots of models during training',
                         default='checkpoints/{}'.format(today))
@@ -304,22 +305,13 @@ def main(args=None):
     if args.gpu:
         os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
 
-    if args.tpu:
-        resolver = tf.distribute.cluster_resolver.TPUClusterResolver(tpu='grpc://' + os.environ['COLAB_TPU_ADDR'])
-        tf.config.experimental_connect_to_cluster(resolver)
-        tf.tpu.experimental.initialize_tpu_system(resolver)
-        strategy = tf.distribute.experimental.TPUStrategy(resolver)
-
     model, prediction_model = efficientdet(args.phi,
                                            num_classes=num_classes,
                                            num_anchors=num_anchors,
-                                           weighted_bifpn=args.weighted_bifpn,
+                                           weighted_bifpn=True,
                                            freeze_bn=args.freeze_bn,
                                            detect_quadrangle=args.detect_quadrangle
                                            )
-    if args.tpu:
-        model = tf.contrib.tpu.keras_to_tpu_model(model,strategy=strategy)
-        prediction_model = tf.contrib.tpu.keras_to_tpu_model(prediction_model,strategy=strategy)
 
     if args.snapshot:
         if args.snapshot == 'imagenet':
@@ -336,7 +328,7 @@ def main(args=None):
             model.load_weights(args.snapshot, by_name=True)
 
     # freeze backbone custom
-    if args.freeze_backbone:
+    if not args.train_backbone:
         # 227, 329, 329, 374, 464, 566, 656
         for i in range(1, [227, 329, 329, 374, 464, 566, 656][args.phi]):
             model.layers[i].trainable = False
