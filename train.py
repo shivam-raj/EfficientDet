@@ -262,8 +262,8 @@ def parse_args(args):
     parser.add_argument('--detect-text', help='If is text detection task.', action='store_true', default=False)
 
     parser.add_argument('--snapshot', help='Resume training from a snapshot.')
-    parser.add_argument('--freeze-backbone', help='Freeze training of backbone layers.', action='store_true')
-    parser.add_argument('--freeze-bn', help='Freeze training of BatchNormalization layers.', action='store_true')
+    parser.add_argument('--freeze-backbone', help='Freeze training of backbone custom.', action='store_true')
+    parser.add_argument('--freeze-bn', help='Freeze training of BatchNormalization custom.', action='store_true')
     parser.add_argument('--weighted-bifpn', help='Use weighted BiFPN', action='store_true')
 
     parser.add_argument('--batch-size', help='Size of the batches.', default=1, type=int)
@@ -332,7 +332,7 @@ def main(args=None):
             print('Loading model, this may take a second...')
             model.load_weights(args.snapshot, by_name=True)
 
-    # freeze backbone layers
+    # freeze backbone custom
     if args.freeze_backbone:
         # 227, 329, 329, 374, 464, 566, 656
         for i in range(1, [227, 329, 329, 374, 464, 566, 656][args.phi]):
