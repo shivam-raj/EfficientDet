@@ -14,8 +14,7 @@ Run Inference.ipynb and replace images with your images
 
 
 ## Results 
-
+<img src='output/0.png'></img>
 <img src='output/1.png'></img>
 <img src='output/2.png'></img>
 <img src='output/3.png'></img>
-<img src='output/4.png'></img>
